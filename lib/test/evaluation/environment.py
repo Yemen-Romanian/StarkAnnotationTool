@@ -45,6 +45,10 @@ def create_default_local_file():
                 comment_str = comment[attr]
             attr_val = getattr(settings, attr)
             if not attr.startswith('__') and not callable(attr_val):
+                if isinstance(attr_val, str):
+                    # Forward slashes keep the generated file a valid Python
+                    # string literal on Windows (backslashes become escapes).
+                    attr_val = attr_val.replace('\\', '/')
                 if comment_str is None:
                     f.write('    settings.{} = \'{}\'\n'.format(attr, attr_val))
                 else:
@@ -98,6 +102,10 @@ def create_default_local_file_ITP_test(workspace_dir, data_dir, save_dir):
                 comment_str = comment[attr]
             attr_val = getattr(settings, attr)
             if not attr.startswith('__') and not callable(attr_val):
+                if isinstance(attr_val, str):
+                    # Forward slashes keep the generated file a valid Python
+                    # string literal on Windows (backslashes become escapes).
+                    attr_val = attr_val.replace('\\', '/')
                 if comment_str is None:
                     f.write('    settings.{} = \'{}\'\n'.format(attr, attr_val))
                 else:

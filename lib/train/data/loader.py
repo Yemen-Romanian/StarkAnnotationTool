@@ -2,7 +2,14 @@ import torch
 import torch.utils.data.dataloader
 import importlib
 import collections
-from torch._six import string_classes, int_classes
+import collections.abc
+try:
+    # torch < 1.9
+    from torch._six import string_classes, int_classes
+except ImportError:
+    # torch._six was removed in torch 2.0 (int_classes already gone in 1.9)
+    string_classes = (str, bytes)
+    int_classes = int
 from lib.utils import TensorDict, TensorList
 
 
@@ -52,12 +59,12 @@ def ltr_collate(batch):
         return batch
     elif isinstance(batch[0], TensorDict):
         return TensorDict({key: ltr_collate([d[key] for d in batch]) for key in batch[0]})
-    elif isinstance(batch[0], collections.Mapping):
+    elif isinstance(batch[0], collections.abc.Mapping):
         return {key: ltr_collate([d[key] for d in batch]) for key in batch[0]}
     elif isinstance(batch[0], TensorList):
         transposed = zip(*batch)
         return TensorList([ltr_collate(samples) for samples in transposed])
-    elif isinstance(batch[0], collections.Sequence):
+    elif isinstance(batch[0], collections.abc.Sequence):
         transposed = zip(*batch)
         return [ltr_collate(samples) for samples in transposed]
     elif batch[0] is None:
@@ -103,12 +110,12 @@ def ltr_collate_stack1(batch):
         return batch
     elif isinstance(batch[0], TensorDict):
         return TensorDict({key: ltr_collate_stack1([d[key] for d in batch]) for key in batch[0]})
-    elif isinstance(batch[0], collections.Mapping):
+    elif isinstance(batch[0], collections.abc.Mapping):
         return {key: ltr_collate_stack1([d[key] for d in batch]) for key in batch[0]}
     elif isinstance(batch[0], TensorList):
         transposed = zip(*batch)
         return TensorList([ltr_collate_stack1(samples) for samples in transposed])
-    elif isinstance(batch[0], collections.Sequence):
+    elif isinstance(batch[0], collections.abc.Sequence):
         transposed = zip(*batch)
         return [ltr_collate_stack1(samples) for samples in transposed]
     elif batch[0] is None:

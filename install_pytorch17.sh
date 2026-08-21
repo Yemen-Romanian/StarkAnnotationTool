@@ -8,6 +8,11 @@ pip install PyYAML
 
 echo ""
 echo ""
+echo "****************** Installing yacs ******************"
+pip install yacs
+
+echo ""
+echo ""
 echo "****************** Installing easydict ******************"
 pip install easydict
 

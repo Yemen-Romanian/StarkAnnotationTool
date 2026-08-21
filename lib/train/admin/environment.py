@@ -36,6 +36,10 @@ def create_default_local_file():
             comment_str = None
             if attr in comment:
                 comment_str = comment[attr]
+            if isinstance(attr_val, str) and attr_val != empty_str:
+                # Forward slashes keep the generated file a valid Python
+                # string literal on Windows (backslashes become escapes).
+                attr_val = attr_val.replace('\\', '/')
             if comment_str is None:
                 f.write('        self.{} = {}\n'.format(attr, attr_val))
             else:
@@ -80,6 +84,10 @@ def create_default_local_file_ITP_train(workspace_dir, data_dir):
             comment_str = None
             if attr in comment:
                 comment_str = comment[attr]
+            if isinstance(attr_val, str) and attr_val != empty_str:
+                # Forward slashes keep the generated file a valid Python
+                # string literal on Windows (backslashes become escapes).
+                attr_val = attr_val.replace('\\', '/')
             if comment_str is None:
                 if attr_val == empty_str:
                     f.write('        self.{} = {}\n'.format(attr, attr_val))

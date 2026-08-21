@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
-from torchvision.models.utils import load_state_dict_from_url
+try:
+    # torchvision < 0.9
+    from torchvision.models.utils import load_state_dict_from_url
+except ImportError:
+    # moved to torch.hub in torchvision 0.9, removed from models.utils in 0.13
+    from torch.hub import load_state_dict_from_url
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv1x1, conv3x3
 '''2021.1.5 Modified from torchvision.models.resnet
 Now the 
