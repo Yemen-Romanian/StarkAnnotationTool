@@ -39,7 +39,7 @@ def select_box(window_name, frame_bgr, prompt):
     return [int(x), int(y), int(w), int(h)]
 
 
-def draw_overlay(frame_bgr, box, frame_idx, total_frames, timing=None):
+def draw_overlay(frame_bgr, box, frame_idx, total_frames, tracking_active, timing=None):
     """Draw the current box and the control hints on a copy of the frame."""
     frame_disp = frame_bgr.copy()
     if box is not None and box != SKIP_BOX:
@@ -50,12 +50,21 @@ def draw_overlay(frame_bgr, box, frame_idx, total_frames, timing=None):
         frame_text = "Frame %d / %d" % (frame_idx, total_frames - 1)
     else:
         frame_text = "Frame %d" % frame_idx
-    lines = [
-        frame_text,
-        "SPACE: accept box    s: skip (0,0,0,0)",
-        "c: correct & re-init    ENTER: save",
-        "q: quit & save",
-    ]
+    if tracking_active:
+        lines = [
+            frame_text,
+            "SPACE: accept box    s: skip (0,0,0,0)",
+            "c: correct & re-init    ENTER: save",
+            "q: quit & save",
+        ]
+    else:
+        lines = [
+            frame_text,
+            "Target not marked yet",
+            "SPACE / s: skip (0,0,0,0)",
+            "c: mark target & start tracking",
+            "ENTER: save    q: quit & save",
+        ]
     if timing is not None:
         lines.append(timing)
     for i, text in enumerate(lines):
@@ -102,17 +111,16 @@ def run_annotation(tracker_name, tracker_param, videofile):
 
     cap = cv.VideoCapture(videofile)
     total_frames = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
-    success, frame = cap.read()
-    if not success:
-        print("Read frame from {} failed.".format(videofile))
-        cap.release()
-        return
 
     window_name = "Annotation: " + tracker_name
     cv.namedWindow(window_name, cv.WINDOW_NORMAL | cv.WINDOW_KEEPRATIO)
     cv.setWindowProperty(window_name, cv.WND_PROP_FULLSCREEN, cv.WINDOW_FULLSCREEN)
 
     boxes = load_annotations(output_path)
+    # The tracker stays idle until the target is marked with 'c'. On videos where the
+    # target only shows up later, every frame before that is recorded as a skip.
+    tracking_active = False
+    frame_idx = -1
 
     if boxes:
         # ---- Resume: replay the already-recorded frames so the video position
@@ -121,38 +129,28 @@ def run_annotation(tracker_name, tracker_param, videofile):
         print("Found %d existing annotations, resuming after frame %d." % (len(boxes), len(boxes) - 1))
         last_valid_frame = None
         last_valid_box = None
-        # frame 0 was already read above; the loop reads frames 1..len(boxes)-1.
         for idx in range(len(boxes)):
-            if idx > 0:
-                success, frame = cap.read()
-                if not success or frame is None:
-                    print("Video has fewer frames than the saved annotation. Nothing left to do.")
-                    cap.release()
-                    cv.destroyAllWindows()
-                    return
+            success, frame = cap.read()
+            if not success or frame is None:
+                print("Video has fewer frames than the saved annotation. Nothing left to do.")
+                cap.release()
+                cv.destroyAllWindows()
+                return
             if boxes[idx] != SKIP_BOX:
                 last_valid_frame = frame
                 last_valid_box = boxes[idx]
         frame_idx = len(boxes) - 1
         if last_valid_box is None:
-            print("Existing annotations contain no valid box to resume tracking from. Aborting.")
-            cap.release()
-            cv.destroyAllWindows()
-            return
-        tracker.initialize(cv.cvtColor(last_valid_frame, cv.COLOR_BGR2RGB), {'init_bbox': last_valid_box})
-    else:
-        # ---- Frame 0: manual initialization (first row of ground-truth) ----
-        init_box = select_box(window_name, frame, "Select target and press ENTER (initial frame)")
-        if init_box == SKIP_BOX:
-            print("No initial box selected. Aborting.")
-            cap.release()
-            cv.destroyAllWindows()
-            return
-        tracker.initialize(cv.cvtColor(frame, cv.COLOR_BGR2RGB), {'init_bbox': init_box})
-        boxes.append(init_box)
-        frame_idx = 0
+            # Every saved row is a skip: the target had not appeared yet when the
+            # previous session stopped. Carry on with the tracker still idle.
+            print("No target marked yet in the saved annotation; continuing without tracking.")
+        else:
+            tracker.initialize(cv.cvtColor(last_valid_frame, cv.COLOR_BGR2RGB),
+                               {'init_bbox': last_valid_box})
+            tracking_active = True
 
-    # ---- Subsequent frames: track, then wait for the user's decision ----
+    # ---- Every frame, frame 0 included: track when the target is already marked,
+    # then wait for the user's decision. ----
     total_track_time = 0.0
     tracked_frames = 0
     while True:
@@ -161,38 +159,45 @@ def run_annotation(tracker_name, tracker_param, videofile):
             break
         frame_idx += 1
 
-        t0 = time.time()
-        out = tracker.track(cv.cvtColor(frame, cv.COLOR_BGR2RGB))
-        track_time = time.time() - t0
-        pred_box = [float(s) for s in out['target_bbox']]
+        timing_text = None
+        pred_box = None
+        if tracking_active:
+            t0 = time.perf_counter()
+            out = tracker.track(cv.cvtColor(frame, cv.COLOR_BGR2RGB))
+            track_time = time.perf_counter() - t0
+            pred_box = [float(s) for s in out['target_bbox']]
 
-        total_track_time += track_time
-        tracked_frames += 1
-        timing_text = "track: %.0f ms (%.1f FPS)   avg: %.0f ms (%.1f FPS)" % (
-            track_time * 1000, 1.0 / max(track_time, 1e-6),
-            total_track_time / tracked_frames * 1000, tracked_frames / total_track_time)
+            total_track_time += track_time
+            tracked_frames += 1
+            timing_text = "track: %.0f ms (%.1f FPS)   avg: %.0f ms (%.1f FPS)" % (
+                track_time * 1000, 1.0 / max(track_time, 1e-6),
+                total_track_time / tracked_frames * 1000,
+                tracked_frames / max(total_track_time, 1e-6))
 
         # Wait for a decision for this frame.
         decision = None
         while decision is None:
-            cv.imshow(window_name, draw_overlay(frame, pred_box, frame_idx, total_frames, timing_text))
+            cv.imshow(window_name, draw_overlay(frame, pred_box, frame_idx, total_frames,
+                                                tracking_active, timing_text))
             key = cv.waitKey(20) & 0xFF
 
-            if key == ord(' '):          # accept tracker prediction
-                boxes.append(pred_box)
+            if key == ord(' '):          # accept tracker prediction, or skip while idle
+                boxes.append(pred_box if tracking_active else list(SKIP_BOX))
                 decision = 'next'
             elif key == ord('s'):        # skip this frame
                 boxes.append(list(SKIP_BOX))
                 decision = 'next'
-            elif key == ord('c'):        # correct manually and re-initialize
-                corrected = select_box(window_name, frame,
-                                       "Correction: select target and press ENTER")
-                if corrected == SKIP_BOX:
+            elif key == ord('c'):        # mark the target (or correct it) and (re-)initialize
+                prompt = ("Correction: select target and press ENTER" if tracking_active
+                          else "Mark target and press ENTER")
+                marked = select_box(window_name, frame, prompt)
+                if marked == SKIP_BOX:
                     continue  # cancelled selection, keep asking for this frame
                 tracker.initialize(cv.cvtColor(frame, cv.COLOR_BGR2RGB),
-                                   {'init_bbox': corrected})
-                boxes.append(corrected)
-                pred_box = corrected
+                                   {'init_bbox': marked})
+                tracking_active = True
+                boxes.append(marked)
+                pred_box = marked
                 decision = 'next'
             elif key in (13, 10):        # ENTER: write current results (overwrite)
                 save_annotations(boxes, output_path)
@@ -205,10 +210,14 @@ def run_annotation(tracker_name, tracker_param, videofile):
     cap.release()
     cv.destroyAllWindows()
 
+    if frame_idx < 0:
+        print("Read frame from {} failed.".format(videofile))
+        return
+
     if tracked_frames:
         print("Tracked %d frames on %s: %.1f ms/frame (%.1f FPS average)" % (
             tracked_frames, get_device(), total_track_time / tracked_frames * 1000,
-            tracked_frames / total_track_time))
+            tracked_frames / max(total_track_time, 1e-6)))
 
     save_annotations(boxes, output_path)
 
