@@ -1,5 +1,6 @@
 from lib.test.tracker.basetracker import BaseTracker
 import torch
+from lib.utils.device import get_device
 from lib.train.data.processing_utils import sample_target
 # for debug
 import cv2
@@ -24,7 +25,7 @@ class STARK_LightningXtrt(BaseTracker):
         network.deep_sup = False  # disable deep supervision during the test stage
         network.distill = False  # disable distillation during the test stage
         self.cfg = params.cfg
-        self.network = network.cuda()
+        self.network = network.to(get_device())
         self.network.eval()
         self.preprocessor = PreprocessorX()
         self.state = None

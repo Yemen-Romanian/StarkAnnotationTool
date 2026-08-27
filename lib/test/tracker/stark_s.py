@@ -1,5 +1,6 @@
 from lib.test.tracker.basetracker import BaseTracker
 import torch
+from lib.utils.device import get_device
 from lib.train.data.processing_utils import sample_target
 # for debug
 import cv2
@@ -16,7 +17,7 @@ class STARK_S(BaseTracker):
         network = build_starks(params.cfg)
         network.load_state_dict(torch.load(self.params.checkpoint, map_location='cpu')['net'], strict=True)
         self.cfg = params.cfg
-        self.network = network.cuda()
+        self.network = network.to(get_device())
         self.network.eval()
         self.preprocessor = Preprocessor()
         self.state = None

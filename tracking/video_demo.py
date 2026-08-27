@@ -7,6 +7,7 @@ if prj_path not in sys.path:
     sys.path.append(prj_path)
 
 from lib.test.evaluation import Tracker
+from lib.utils.device import set_device
 
 
 def run_video(tracker_name, tracker_param, videofile, optional_box=None, debug=None, save_results=False):
@@ -28,9 +29,14 @@ def main():
     parser.add_argument('--optional_box', type=float, default=None, nargs="+", help='optional_box with format x y w h.')
     parser.add_argument('--debug', type=int, default=0, help='Debug level.')
     parser.add_argument('--save_results', dest='save_results', action='store_true', help='Save bounding boxes')
+    parser.add_argument('--device', type=str, default=None,
+                        help="Device to run the tracker on: 'cpu', 'cuda', 'cuda:1', ... "
+                             "Defaults to CUDA when available, otherwise CPU.")
     parser.set_defaults(save_results=False)
 
     args = parser.parse_args()
+    if args.device is not None:
+        set_device(args.device)
 
     run_video(args.tracker_name, args.tracker_param, args.videofile, args.optional_box, args.debug, args.save_results)
 
